@@ -1,1 +1,29 @@
-bottle water
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local character = script.Parent
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local camera = workspace.CurrentCamera
+
+local TURN_SPEED = 15
+
+humanoid.AutoRotate = false
+
+RunService.PreSimulation:Connect(function(dt)
+	local moveDir = humanoid.MoveDirection
+	local isShiftLocked = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+	
+	if isShiftLocked then
+		local _, y, _ = camera.CFrame:ToEulerAnglesYXZ()
+		local targetRotation = CFrame.new(rootPart.Position) * CFrame.Angles(0, y, 0)
+		
+		rootPart.CFrame = rootPart.CFrame:Lerp(targetRotation, math.clamp(dt * TURN_SPEED, 0, 1))
+		
+	elseif moveDir.Magnitude > 0 then
+		local targetLook = CFrame.lookAt(Vector3.zero, Vector3.new(moveDir.X, 0, moveDir.Z))
+		local targetRotation = CFrame.new(rootPart.Position) * targetLook
+		
+		rootPart.CFrame = rootPart.CFrame:Lerp(targetRotation, math.clamp(dt * TURN_SPEED, 0, 1))
+	end
+end)
