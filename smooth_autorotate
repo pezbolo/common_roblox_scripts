@@ -1,3 +1,5 @@
+--use as a local script and pout in startercharacterscripts
+
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
