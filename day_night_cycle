@@ -1,0 +1,10 @@
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+
+--settings
+local DAY_LENGTH_MINUTES = 1 --how long the day is in real time
+local CYCLE_SPEED = 24 / (DAY_LENGTH_MINUTES * 60) --smoothness, not recommended to make higher cuz like no lol
+
+RunService.Heartbeat:Connect(function(dt)
+	Lighting.ClockTime += CYCLE_SPEED * dt
+end)
