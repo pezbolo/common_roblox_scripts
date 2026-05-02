@@ -1,0 +1,46 @@
+--for this to be usable, make a bindable event in rs called AddModifierClient and a remote event in rs too called AddModifierServer, if you store your events differently you can put them in a folder and change the path
+--to use, from a different script just call the bindable (if you want to add it though the client) and call the remote if you want to add it through the server, EXAMPLE USAGE: AddModifierEvent:Fire("Sprint", "Multiply", 2)
+
+local Player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Operations = {
+	["Multiply"]  = function(a, b) return a * b end,
+	["Add"]       = function(a, b) return a + b end,
+	["Subtract"]  = function(a, b) return a - b end,
+	["Divide"]    = function(a, b) return a / b end,
+}
+
+local Modifiers = {}
+
+RunService.RenderStepped:Connect(function()
+	local TotalSpeed = 16
+
+	for _, modifier in pairs(Modifiers) do
+		local opFunc = Operations[modifier.Operator]
+
+		if opFunc then
+			TotalSpeed = opFunc(TotalSpeed, modifier.Amount)
+		end
+	end
+
+	local character = Player.Character
+	if character and character:FindFirstChild("Humanoid") then
+		character.Humanoid.WalkSpeed = TotalSpeed
+	end
+end)
+
+ReplicatedStorage:WaitForChild("AddModifierClient").Event:Connect(function(id, operator, amount)
+	Modifiers[id] = {
+		["Operator"] = operator,
+		["Amount"] = amount
+	}
+end)
+
+ReplicatedStorage:WaitForChild("AddModifierServer").OnClientEvent:Connect(function(id, operator, amount)
+	Modifiers[id] = {
+		["Operator"] = operator,
+		["Amount"] = amount
+	}
+end)
