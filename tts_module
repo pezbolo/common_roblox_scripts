@@ -1,0 +1,258 @@
+--!nocheck
+-- Simulators & Games Corporation / GTA5_Michael2
+
+--NOTE: THIS IS NOT MINE BUT ITS SO COOL FEEL FREE TO USE IT
+
+local TTS = {}
+TTS.__index = TTS
+
+-- CONFIGURATION
+local DEFAULT_VOICE_ID = "1"
+local DEFAULT_TEXT = "Error!"
+local MINIMUM_TTS_COOLDOWN = 1 -- 1 or 3.25
+local INTERVAL_BETWEEN_EACH_DIALOG = 0.1 -- 0.1 or 0.5
+local CAN_BE_UNLOADED = true
+local DESTROY_SOUND_CONTAINER_WHILE_DESTROYING = false
+local CREATE_NEW_TTS_EVERY_TIME_WHEN_NEW_IS_CALLED = false
+local SOUND_SERVICE_NAME = "Sound Container"
+
+export type Dialog = {
+	{Text: string, VoiceId: string}
+}
+
+export type Constructor = {
+	SoundService: Folder,
+	TTS: AudioTextToSpeech,
+	DO: AudioDeviceOutput,
+	Wire: Wire,
+	Play: (self: Constructor, text: string?, id: string?, wait: boolean?) -> (),
+	Calculate: (self: Constructor) -> number,
+	Stop: (self: Constructor) -> (),
+	SetText: (self: Constructor, text: string?, play: boolean?) -> (),
+	SetVoice: (self: Constructor, id: string?) -> (),
+	SetVolume: (self: Constructor, volume: number?) -> (),
+	IsPlaying: (self: Constructor) -> boolean,
+	GetDuration: (self: Constructor) -> number,
+	fromDialog: (self: Constructor, dialog: Dialog) -> (),
+	Destroy: (self: Constructor) -> ()
+}
+
+local function sanitize(text: string?, fallback: string): string
+	local normalized = TTS.normalizeText(text)
+	if type(text) ~= "string" or normalized:match("^%s*$") or not normalized:match("^[\0-\127]*$") then
+		return fallback
+	end
+	return text
+end
+
+local function isNumber(n: number?): boolean
+	return type(n) == "number" and n == n
+end
+
+local function isValid(self): boolean
+	return typeof(self.TTS) == "Instance" and self.TTS:IsA("AudioTextToSpeech")
+end
+
+local function unload(TTS: AudioTextToSpeech)
+	if TTS.IsLoaded and CAN_BE_UNLOADED then
+		TTS:Unload()
+	end
+end
+
+local function setText(TTS, text)
+	unload(TTS)
+	TTS.Text = sanitize(text, DEFAULT_TEXT)
+end
+
+local function setVoice(TTS, voice)
+	unload(TTS)
+	TTS.VoiceId = sanitize(voice, DEFAULT_VOICE_ID)
+end
+
+local function create(name: string, class: string?, parent: Instance): Instance
+	local ins = Instance.new(class, parent)
+	ins.Name = name
+	return ins
+end
+
+local function find(name: string, class: string, parent: Instance?): Instance
+	parent = parent or workspace
+	class = class or "Folder"
+	local found = parent:FindFirstChild(name)
+	local cl = (found or {}).ClassName == class
+	if found and cl and not CREATE_NEW_TTS_EVERY_TIME_WHEN_NEW_IS_CALLED then return found end
+	if found and not cl then found:Destroy() end
+	return create(name, class, parent)
+end
+
+local function createTTS(parent: Instance, text: string?, voice: string?, volume: number?): AudioTextToSpeech
+	local TTS: AudioTextToSpeech = find("AudioTTS", "AudioTextToSpeech", parent)
+	setText(TTS, text)
+	setVoice(TTS, voice)
+	if isNumber(volume) then TTS.Volume = volume end
+	return TTS
+end
+
+local function createWire(parent: Instance, audioTTS: AudioTextToSpeech, dO: AudioDeviceOutput): Wire
+	local wire: Wire = find("Wire", "Wire", parent)
+	if audioTTS:IsA("AudioTextToSpeech") and dO:IsA("AudioDeviceOutput") then
+		wire.SourceInstance = audioTTS
+		wire.TargetInstance = dO
+	end
+	return wire
+end
+
+local function wait(tts)
+	local startTime = os.clock()
+	tts.Ended:Wait()
+	local elapsedTime = os.clock() - startTime
+	if elapsedTime < MINIMUM_TTS_COOLDOWN then
+		task.wait(MINIMUM_TTS_COOLDOWN - elapsedTime)
+	end
+end
+
+function TTS.normalizeText(text: string?): string
+	if type(text) ~= "string" then return "" end
+	
+	text = text
+		:gsub("[‘’‚‛]", "'")      -- single quotes
+		:gsub("[“”„‟]", "\"")    -- double quotes
+		:gsub("[–—‒]", "-")      -- dashes
+	
+	text = text
+		:gsub("[\226\128\139\194\160\226\128\128\226\128\129\226\128\130\226\128\131\226\128\132\226\128\133\226\128\134\226\128\135\226\128\136\226\128\137\226\128\138\226\128\175\226\129\159\227\128\128]", " ") -- common Unicode spaces
+		:gsub("[\226\128\139\226\128\140\226\128\141\239\187\191]", "") -- zero-width & BOM
+	
+	text = text
+		:gsub("[%c]", "")        -- control characters (excluding newline, if needed)
+		:gsub(" +", " ")         -- multiple spaces
+		:gsub("^%s+", "")        -- leading spaces
+		:gsub("%s+$", "")        -- trailing spaces
+	
+	return text
+end
+
+function TTS.FromDialog(dialog: Dialog)
+	local SS = find(SOUND_SERVICE_NAME)
+	local tts: AudioTextToSpeech = createTTS(SS)
+	local deviceOutput: AudioDeviceOutput = find("Output", "AudioDeviceOutput", SS)
+	local wire: Wire = createWire(SS, tts, deviceOutput)
+	
+	local lastId
+	local total = #dialog
+	
+	for i = 1, total do		
+		local data = dialog[i]
+		local text, id = data.Text, data.VoiceId
+		
+		if lastId ~= id then setVoice(tts, id) end
+		lastId = id
+		setText(tts, text)
+		tts:Play()
+		local st = os.clock()
+		wait(tts)
+	end
+	task.wait(INTERVAL_BETWEEN_EACH_DIALOG)
+end
+
+function TTS.new(text: string?, voice: string?, volume: number?): Constructor
+	local SS = find(SOUND_SERVICE_NAME)
+	local audioTTS = createTTS(SS, text, voice, volume)
+	local deviceOutput = find("Output", "AudioDeviceOutput", SS)
+	local wire = createWire(SS, audioTTS, deviceOutput)
+	
+	return setmetatable({
+		SoundService = SS,
+		TTS = audioTTS,
+		DO = deviceOutput,
+		Wire = wire,
+		_info = {
+			fromDialog = false
+		}
+	}, TTS)
+end
+
+function TTS:Play(text: string?, id: string?, wait: boolean?)
+	if isValid(self) then
+		if text then setText(self.TTS, text) end
+		if id then setVoice(self.TTS, id) end
+		self.TTS:Play()
+		if wait then self.TTS.Ended:Wait() end
+	end
+end
+
+function TTS:Calculate()
+	return isValid(self) and math.max(10, #self.TTS.Text * 0.15) or 0
+end
+
+function TTS:SetText(text: string?, play: boolean?)
+	if isValid(self) then
+		setText(self.TTS, text)
+		if play then self.TTS:Play() end
+	end
+end
+
+function TTS:SetVoice(id: string?)
+	if isValid(self) then
+		setVoice(self.TTS, id)
+	end
+end
+
+function TTS:SetVolume(volume: number?)
+	if isValid(self) and isNumber(volume) then
+		self.TTS.Volume = volume
+	end
+end
+
+function TTS:IsPlaying(): boolean
+	return isValid(self) and self.TTS.IsPlaying
+end
+
+function TTS:GetDuration(): number
+	if isValid(self) then
+		return self.TTS.TimeLength or 0
+	end
+	return 0
+end
+
+function TTS:fromDialog(dialog: Dialog)
+	if self._info.fromDialog then return end
+	self._info.fromDialog = true
+	
+	local lastId
+	local tts: AudioTextToSpeech = self.TTS
+	local total = #dialog
+	
+	for i = 1, total do		
+		local data = dialog[i]
+		local text, id = data.Text, data.VoiceId
+		
+		if lastId ~= id then self:SetVoice(id) end
+		lastId = id
+		self:SetText(text, true)
+		wait(tts)
+	end
+	task.wait(INTERVAL_BETWEEN_EACH_DIALOG)
+	self._info.fromDialog = false
+end
+
+function TTS:Stop()
+	if isValid(self) then
+		self.TTS:Stop()
+	end
+end
+
+function TTS:Destroy()
+	if not isValid(self) then return end
+	unload(self.TTS)
+	self.Wire:Destroy()
+	self.DO:Destroy()
+	self.TTS:Destroy()
+	if DESTROY_SOUND_CONTAINER_WHILE_DESTROYING then self.SoundService:Destroy() end
+end
+
+return TTS :: {
+	new: (text: string?, voice: string?, volume: number?) -> Constructor,
+	FromDialog: (dialog: Dialog) -> (),
+	normalizeText: (text: string?) -> string
+}
