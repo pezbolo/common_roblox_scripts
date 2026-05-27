@@ -1,0 +1,29 @@
+--make a sounds folder in replicated storage to use btw
+--note not every gfame needs this, but i find it useful to not be having to constantly create new sounds and change their pitch and so on
+
+local Sounds = game:GetService("ReplicatedStorage"):WaitForChild("Sounds")
+
+local SoundSystem = {}
+local rng = Random.new()
+
+function SoundSystem:PlaySound(sound, location)
+	if Sounds:FindFirstChild(sound) then
+		local source = Instance.new("Part")
+		source.CanCollide = false
+		source.CanQuery = false
+		source.CanTouch = false
+		source.Anchored = true
+		source.Transparency = 1
+		source.Parent = workspace
+		source.Position = location
+		source.Name = "SoundSource"
+
+		local clone = Sounds[sound]:Clone() :: Sound
+		clone.PlaybackSpeed = rng:NextNumber(0.95, 1.05)
+		clone.Parent = source
+		clone:Play()
+		game.Debris:AddItem(source, clone.TimeLength + 3)
+	end
+end
+
+return SoundSystem
